@@ -49,7 +49,13 @@
   </style>
 </head>
 <body>
-  <header><h1>水质实验室 · 批次修订发布台</h1></header>
+  <header>
+    <h1>水质实验室 · 批次修订发布台</h1>
+    <nav style="margin-top:6px;font-size:13px">
+      <a href="{{ url_for('index') }}" style="color:#cfe0ff;text-decoration:none;margin-right:18px">批次发布</a>
+      <a href="{{ url_for('partners_page') }}" style="color:#cfe0ff;text-decoration:none">合作方盲化供数</a>
+    </nav>
+  </header>
   <main>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}

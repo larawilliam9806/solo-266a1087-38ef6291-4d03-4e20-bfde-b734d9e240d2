@@ -11,12 +11,19 @@ from flask import (
     flash,
     redirect,
     render_template,
+    render_template_string,
     request,
     send_file,
     url_for,
 )
 
-from .storage import LIVE_FILENAME, PublishConflictError, Storage
+from .storage import (
+    LIVE_FILENAME,
+    ExportError,
+    PartnerError,
+    PublishConflictError,
+    Storage,
+)
 from .validation import format_concentration, validate_csv
 
 MAX_UPLOAD_BYTES = 16 * 1024 * 1024
@@ -172,9 +179,109 @@ def create_app(data_dir: str | None = None, downstream_dir: str | None = None) -
             download_name=LIVE_FILENAME, as_attachment=False,
         )
 
+    # ---------- 浏览器盲化供数 ----------
+    @app.get("/partners")
+    def partners_page():
+        partners = storage.list_partners()
+        return render_template("partners.html", partners=partners)
+
+    @app.post("/partners")
+    def partners_create():
+        name = request.form.get("name", "")
+        try:
+            partner = storage.create_partner(name)
+        except PartnerError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("partners_page"))
+        flash(f"合作方“{partner['name']}”已建立，盲化域独立且主密钥已持久化", "success")
+        return redirect(url_for("partner_detail", partner_id=partner["id"]))
+
+    @app.post("/partners/<int:partner_id>/revoke")
+    def partners_revoke(partner_id):
+        try:
+            changed = storage.revoke_partner(partner_id)
+        except PartnerError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("partners_page"))
+        if changed:
+            flash("合作方已撤销：旧下载地址不再受理新请求，进行中的下载可正常结束", "info")
+        else:
+            flash("该合作方此前已撤销", "info")
+        return redirect(url_for("partner_detail", partner_id=partner_id))
+
+    @app.get("/partners/<int:partner_id>")
+    def partner_detail(partner_id):
+        partner = storage.get_partner(partner_id)
+        if partner is None:
+            abort(404, description="合作方不存在")
+        exports = storage.list_exports(partner_id)
+        versions = storage.published_versions()
+        return render_template(
+            "partner_detail.html",
+            partner=partner, exports=exports, versions=versions,
+        )
+
+    @app.post("/partners/<int:partner_id>/exports")
+    def exports_create(partner_id):
+        partner = storage.get_partner(partner_id)
+        if partner is None:
+            abort(404, description="合作方不存在")
+        try:
+            version = int(request.form.get("version", ""))
+        except (TypeError, ValueError):
+            flash("请选择一个已发布版本", "error")
+            return redirect(url_for("partner_detail", partner_id=partner_id))
+        try:
+            record = storage.create_blind_export(partner_id, version)
+        except (PartnerError, ExportError) as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("partner_detail", partner_id=partner_id))
+        flash(
+            f"v{record['version']} 盲化导出已生成（仅含盲码、检测项目、浓度），"
+            "可通过下方固定地址下载",
+            "success",
+        )
+        return redirect(url_for("partner_detail", partner_id=partner_id))
+
+    @app.get("/blind/<token>")
+    def blind_download(token):
+        record = storage.get_ready_export(token)
+        if record is None:
+            # 合作方撤销 / 导出不存在或未就绪：旧地址一律不再取数
+            abort(410, description="该下载地址已失效或合作方已撤销")
+        path = storage.export_path(record["file_name"])
+        if not os.path.exists(path):
+            # 文件被外部移走：交给启动恢复重建，此刻不提供半份数据
+            abort(410, description="导出文件暂不可用，请联系管理员")
+        download_name = (
+            f"blind_partner{record['partner_id']}_v{record['version']}.csv"
+        )
+        # send_file 打开文件后即持有独立句柄；撤销合作方只改数据库状态，
+        # 不会删除文件，因此已经开始（已受理）的下载可以完整结束
+        return send_file(
+            path, mimetype="text/csv",
+            download_name=download_name, as_attachment=True,
+        )
+
     @app.errorhandler(413)
     def too_large(_):
         flash("上传文件超过 16MB 上限", "error")
         return redirect(url_for("index"))
+
+    @app.errorhandler(410)
+    def gone(exc):
+        return (
+            render_template_string(
+                "<!doctype html><html lang='zh-CN'><meta charset='utf-8'>"
+                "<title>下载地址已失效</title>"
+                "<body style='font-family:sans-serif;padding:40px;line-height:1.7'>"
+                "<h2>410 · 下载地址已失效</h2>"
+                "<p>{{ desc }}</p>"
+                "<p>合作方撤销后旧地址立即停止受理；如仍需数据，请联系实验室重新建立合作。</p>"
+                "<p><a href='/'>返回首页</a></p></body>",
+                desc=getattr(exc, "description", "该资源已不可用"),
+            ),
+            410,
+        )
 
     return app

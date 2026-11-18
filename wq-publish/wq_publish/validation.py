@@ -164,3 +164,25 @@ def render_csv(rows: list[dict]) -> str:
             ]
         )
     return buf.getvalue()
+
+
+BLIND_HEADER = ["盲码", "检测项目", "浓度(mg/L)"]
+
+
+def render_blind_csv(blind_rows: list[dict]) -> str:
+    """渲染盲化供数 CSV：仅含 盲码 / 检测项目 / 浓度 三列。
+
+    按盲码、检测项目排序输出，行序不携带原始样本号的顺序信息。
+    """
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(BLIND_HEADER)
+    for row in sorted(blind_rows, key=lambda r: (r["blind_code"], r["analyte"])):
+        writer.writerow(
+            [
+                row["blind_code"],
+                row["analyte"],
+                format_concentration(row["concentration"]),
+            ]
+        )
+    return buf.getvalue()

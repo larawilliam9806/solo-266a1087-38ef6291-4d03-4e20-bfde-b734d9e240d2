@@ -1,0 +1,26 @@
+services:
+  wq-publish:
+    build: .
+    image: wq-publish:latest
+    container_name: wq-publish
+    ports:
+      # 仅绑定本机回环；对外暴露请在前置反向代理上加访问控制
+      - "127.0.0.1:5000:5000"
+    environment:
+      WQ_DATA_DIR: /data
+      WQ_DOWNSTREAM_DIR: /downstream
+      WQ_HOST: 0.0.0.0
+      WQ_PORT: "5000"
+    volumes:
+      # 持久化 SQLite、盲化主密钥、盲化导出与隔离区（重启后盲码保持）
+      - wq-data:/data
+      # 下游采集程序读取的正式供数目录（published_results.csv）
+      - wq-downstream:/downstream
+    restart: unless-stopped
+    # 单实例：并发正确性依赖同一 SQLite 文件锁与同目录原子改名
+    deploy:
+      replicas: 1
+
+volumes:
+  wq-data:
+  wq-downstream:

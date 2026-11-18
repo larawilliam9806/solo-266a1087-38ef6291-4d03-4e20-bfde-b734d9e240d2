@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ partner.name }} · 盲化供数管理{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>合作方：{{ partner.name }}
+    {% if partner.revoked_at %}
+    <span class="tag del" style="margin-left:8px">已撤销 {{ partner.revoked_at }}</span>
+    {% else %}
+    <span class="tag ins" style="margin-left:8px">有效</span>
+    {% endif %}
+  </h2>
+  <p class="muted" style="margin-bottom:6px">
+    合作方 ID：<code>{{ partner.id }}</code>　盲化域独立，导出 CSV 仅含
+    <strong>盲码、检测项目、浓度(mg/L)</strong> 三列，不含样本号。
+    同一合作方的样本盲码跨版本稳定，可用于追踪同一样本的修订。
+  </p>
+  {% if not partner.revoked_at %}
+  <form method="post" action="{{ url_for('partners_revoke', partner_id=partner.id) }}"
+        onsubmit="return confirm('撤销后该合作方的所有旧下载地址立即停止受理；已开始的下载可读完。确认撤销？');">
+    <button type="submit" class="danger">撤销合作方</button>
+  </form>
+  {% else %}
+  <p class="muted" style="margin-bottom:0">
+    该合作方已撤销：所有下载地址返回失效，不再受理新导出；
+    已生成的完整文件保留，供审计与进行中的下载使用。
+  </p>
+  {% endif %}
+</div>
+
+{% if not partner.revoked_at %}
+<div class="card">
+  <h2>生成盲化导出（选择已发布版本）</h2>
+  {% if versions %}
+  <form method="post" action="{{ url_for('exports_create', partner_id=partner.id) }}">
+    <label for="version">已发布版本</label>
+    <select id="version" name="version" style="padding:9px 10px;border:1px solid var(--line);
+            border-radius:7px;font-size:14px;min-width:280px">
+      {% for v in versions %}
+      <option value="{{ v.version }}">
+        v{{ v.version }} · 批次 {{ v.batch_no }} · {{ v.row_count }} 行
+      </option>
+      {% endfor %}
+    </select>
+    <p class="muted">
+      只能选择已发布的完整版本；生成过程原子完成，失败不会留下可用的部分导出，
+      且不影响原始供数文件。
+    </p>
+    <button type="submit">生成并获取下载地址</button>
+  </form>
+  {% else %}
+  <p class="muted" style="margin-bottom:0">尚无已发布版本，请先在批次发布页完成一次发布。</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>导出与下载记录（{{ exports|length }}）</h2>
+  {% if exports %}
+  <table>
+    <thead>
+      <tr><th style="width:70px">版本</th><th style="width:80px">行数</th>
+          <th>下载地址（撤销后立即失效）</th><th style="width:110px">状态</th>
+          <th style="width:180px">生成时间 (UTC)</th></tr>
+    </thead>
+    <tbody>
+    {% for e in exports %}
+      <tr>
+        <td>v{{ e.version }}</td>
+        <td>{{ e.row_count }}</td>
+        <td>
+          {% if e.status == 'ready' and not partner.revoked_at %}
+          <a href="{{ url_for('blind_download', token=e.token) }}">
+            <code>/blind/{{ e.token }}</code>
+          </a>
+          {% else %}
+          <code style="color:#98a2b3">/blind/{{ e.token }}</code>
+          {% endif %}
+        </td>
+        <td>
+          {% if e.status == 'ready' %}<span class="tag ins">ready</span>
+          {% elif e.status == 'failed' %}<span class="tag del">failed</span>
+          {% else %}<span class="tag upd">{{ e.status }}</span>{% endif %}
+        </td>
+        <td>{{ e.created_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin-bottom:0">暂无导出记录。</p>
+  {% endif %}
+</div>
+
+<p><a href="{{ url_for('partners_page') }}">← 返回合作方列表</a></p>
+
+{% endblock %}

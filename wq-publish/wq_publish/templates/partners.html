@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}合作方盲化供数 · 水质批次修订发布{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>建立合作方</h2>
+  <form method="post" action="{{ url_for('partners_create') }}">
+    <label for="name">合作方名称</label>
+    <input type="text" id="name" name="name" required maxlength="100"
+           placeholder="例如：江北水务监测中心" style="max-width:420px">
+    <p class="muted">
+      每个合作方拥有独立的盲化域：同一样本在不同合作方处的盲码不同，
+      盲码由持久化主密钥经 HMAC 派生，重启后保持，且无法从样本号或连续编号推算。
+    </p>
+    <button type="submit">建立合作方</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>合作方列表（{{ partners|length }}）</h2>
+  {% if partners %}
+  <table>
+    <thead>
+      <tr><th style="width:60px">ID</th><th>名称</th><th style="width:180px">建立时间 (UTC)</th>
+          <th style="width:110px">状态</th><th style="width:110px">就绪导出</th><th style="width:120px">操作</th></tr>
+    </thead>
+    <tbody>
+    {% for p in partners %}
+      <tr>
+        <td>{{ p.id }}</td>
+        <td>{{ p.name }}</td>
+        <td>{{ p.created_at }}</td>
+        <td>
+          {% if p.revoked_at %}
+          <span class="tag del">已撤销 {{ p.revoked_at }}</span>
+          {% else %}
+          <span class="tag ins">有效</span>
+          {% endif %}
+        </td>
+        <td>{{ p.ready_count }}</td>
+        <td><a href="{{ url_for('partner_detail', partner_id=p.id) }}">详情 / 下载管理</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin-bottom:0">尚无合作方。</p>
+  {% endif %}
+</div>
+
+{% endblock %}
